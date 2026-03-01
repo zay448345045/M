@@ -14,23 +14,56 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install aria2
-        run: sudo apt-get update && sudo apt-get install -y aria2
+        run: |
+          sudo apt-get update && sudo apt-get install -y aria2
+          # 创建下载目录，避免文件混乱
+          mkdir -p ./downloads
+          echo "DOWNLOAD_DIR=$(pwd)/downloads" >> $GITHUB_ENV
 
-      - name: Multi-threaded Download
+      - name: Multi-threaded Download (兼容 GitCode 限制)
         env:
           SP_COOKIE: ${{ secrets.git }}
+          FILE_URL: "https://file-cdn.gitcode.com/4141677/releases/untagger_60fcc5281c2f4565974dd9812dac73a0/justpiano_50.apk?auth_key=1772365579-3537277bd77f44fd8f8780e42a3aab0f-0-73cb1b4f72b4fcc26f7eb2549b02db974324a97f3a1907872f60fd72e42c5485"
         run: |
-          echo "--- 开始多线程下载 ---"
-          URL="https://file-cdn.gitcode.com/4141677/releases/untagger_60fcc5281c2f4565974dd9812dac73a0/justpiano_50.apk?auth_key=1772365579-3537277bd77f44fd8f8780e42a3aab0f-0-73cb1b4f72b4fcc26f7eb2549b02db974324a97f3a1907872f60fd72e42c5485"
+          echo "--- 开始下载 (aria2c 兼容模式) ---"
+          
+          # 关键调整：-x 1 -s 1 禁用分块下载（避免403），保留aria2c的其他优势
+          # 添加完整的浏览器请求头，模拟真实访问
+          aria2c \
+            -x 1 -s 1 \                  # 禁用分块（核心修复）
+            --header="Cookie: $SP_COOKIE" \
+            --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+            --header="Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+            --header="Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" \
+            --header="Connection: keep-alive" \
+            --dir=$DOWNLOAD_DIR \         # 指定下载目录
+            --out=justpiano.apk \         # 显式指定文件名（避免自动命名问题）
+            --allow-overwrite=true \      # 允许覆盖（重试时有用）
+            --continue=true \             # 支持断点续传
+            --show-console-readout=false \
+            --quiet=false \
+            "$FILE_URL"
 
-          # -x 16 表示使用 16 个线程
-          aria2c -x 16 -s 16 \
-                 --header="Cookie: $SP_COOKIE" \
-                 --user-agent="Mozilla/5.0" \
-                 "$URL"
-
-          echo "--- 下载完成，查看文件 ---"
-          ls -lh
+          echo "--- 验证下载结果 ---"
+          # 检查文件是否存在
+          DOWNLOAD_FILE="$DOWNLOAD_DIR/justpiano.apk"
+          if [ ! -f "$DOWNLOAD_FILE" ]; then
+            echo "❌ 错误：文件下载失败"
+            ls -lh $DOWNLOAD_DIR
+            exit 1
+          fi
+          
+          # 检查文件大小（排除空文件）
+          FILE_SIZE=$(stat -c%s "$DOWNLOAD_FILE")
+          if [ $FILE_SIZE -lt 1024 ]; then
+            echo "❌ 错误：下载的文件过小（可能是错误页面）"
+            cat $DOWNLOAD_FILE  # 打印文件内容排查问题
+            exit 1
+          fi
+          
+          echo "✅ 下载成功：$DOWNLOAD_FILE (大小: $((FILE_SIZE/1024/1024)) MB)"
+          echo "DOWNLOADED_FILE=$DOWNLOAD_FILE" >> $GITHUB_ENV
+          ls -lh $DOWNLOAD_FILE
 
       - name: Create Release and Upload
         uses: softprops/action-gh-release@v2
@@ -38,6 +71,11 @@ jobs:
           tag_name: "download-v${{ github.run_number }}"
           name: "Download v${{ github.run_number }}"
           body: |
-            ## 多线程下载完成
-            - 自动获取文件名，无需手动指定。
-          files: ./*
+            ## 下载完成 (aria2c 兼容模式)
+            - 下载工具：aria2c（单线程模式，兼容 GitCode 服务器限制）
+            - 文件名称：justpiano.apk
+            - 文件大小：${{ env.FILE_SIZE }} 字节 (约 $((FILE_SIZE/1024/1024)) MB)
+            - 下载时间：${{ github.run_at }}
+          files: ${{ env.DOWNLOADED_FILE }}  # 只上传目标文件（关键修复）
+          draft: false
+          prerelease: false

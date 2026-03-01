@@ -22,7 +22,7 @@ jobs:
       - name: Download File
         env:
           SP_COOKIE: ${{ secrets.git }}
-          FILE_URL: "https://file-cdn.gitcode.com/4141677/releases/untagger_60fcc5281c2f4565974dd9812dac73a0/justpiano_50.apk?auth_key=1772365579-3537277bd77f44fd8f8780e42a3aab0f-0-73cb1b4f72b4fcc26f7eb2549b02db974324a97f3a1907872f60fd72e42c5485"
+          FILE_URL: "https://gitcode.com/aztcd/justpiano/releases/download/4.9.1/justpiano_50.apk"
         run: |
           echo "--- 步骤 1: 开始下载文件 ---"
           

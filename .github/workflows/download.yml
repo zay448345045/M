@@ -1,31 +1,35 @@
-name: Download and Release gitcode
+name: Download and Release (Multi-threaded)
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
 
 jobs:
   download_and_release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 允许创建 Release
+      contents: write
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
 
-      - name: Download File
+      - name: Install aria2
+        run: sudo apt-get update && sudo apt-get install -y aria2
+
+      - name: Multi-threaded Download
         env:
           SP_COOKIE: ${{ secrets.git }}
         run: |
-          echo "--- 步骤 1: 下载文件（自动获取文件名） ---"
+          echo "--- 开始多线程下载 ---"
           URL="https://file-cdn.gitcode.com/4141677/releases/untagger_60fcc5281c2f4565974dd9812dac73a0/justpiano_50.apk?auth_key=1772365579-3537277bd77f44fd8f8780e42a3aab0f-0-73cb1b4f72b4fcc26f7eb2549b02db974324a97f3a1907872f60fd72e42c5485"
 
-          # -OJ 会根据服务器返回的 Content-Disposition 自动命名
-          curl -L -A "Mozilla/5.0" \
-               -H "Cookie: $SP_COOKIE" \
-               -OJ "$URL"
+          # -x 16 表示使用 16 个线程
+          aria2c -x 16 -s 16 \
+                 --header="Cookie: $SP_COOKIE" \
+                 --user-agent="Mozilla/5.0" \
+                 "$URL"
 
-          echo "--- 步骤 2: 查看下载的文件名 ---"
+          echo "--- 下载完成，查看文件 ---"
           ls -lh
 
       - name: Create Release and Upload
@@ -34,6 +38,6 @@ jobs:
           tag_name: "download-v${{ github.run_number }}"
           name: "Download v${{ github.run_number }}"
           body: |
-            ## 下载完成
-            - 文件自动命名，无需手动指定。
+            ## 多线程下载完成
+            - 自动获取文件名，无需手动指定。
           files: ./*
